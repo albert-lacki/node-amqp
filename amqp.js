@@ -8,8 +8,9 @@ var events = require('events'),
     URL = require('url'),
     AMQPTypes = require('./constants').AMQPTypes,
     Indicators = require('./constants').Indicators,
-    FrameType = require('./constants').FrameType;
-    
+    FrameType = require('./constants').FrameType,
+    nodeAMQPVersion = '0.1.7';
+
 function mixin () {
   // copy reference to target object
   var target = arguments[0] || {}, i = 1, length = arguments.length, deep = false, source;
@@ -96,18 +97,18 @@ var classes = {};
     classes[classInfo.index] = classInfo;
     for (var j = 0; j < classInfo.methods.length; j++) {
       var methodInfo = classInfo.methods[j];
-      
+
       var name = classInfo.name
         + methodInfo.name[0].toUpperCase()
         + methodInfo.name.slice(1);
       //debug(name);
-      
+
       var method = { name: name
                      , fields: methodInfo.fields
                      , methodIndex: methodInfo.index
                      , classIndex: classInfo.index
                    };
-      
+
       if (!methodTable[classInfo.index]) methodTable[classInfo.index] = {};
       methodTable[classInfo.index][methodInfo.index] = method;
       methods[name] = method;
@@ -361,7 +362,7 @@ function parseTable (buffer) {
   while (buffer.read < length) {
     table[parseShortString(buffer)] = parseValue(buffer);
   }
-  
+
   return table;
 }
 
@@ -498,7 +499,7 @@ function serializeFloat(b, size, value, bigEndian) {
     for (var i = 0; i < x.length; ++i)
       b[b.used++] = x[i];
     break;
-  
+
   case 8:
     var x = jp.Pack('d', [value]);
     for (var i = 0; i < x.length; ++i)
@@ -610,9 +611,9 @@ function isBigInt(value) {
   return value > 0xffffffff;
 }
 
-function getCode(dec) { 
+function getCode(dec) {
   var hexArray = "0123456789ABCDEF".split('');
-  
+
   var code1 = Math.floor(dec / 16);
   var code2 = dec - code1 * 16;
   return hexArray[code2];
@@ -982,6 +983,12 @@ exports.Connection = Connection;
 
 var defaultPorts = { 'amqp': 5672, 'amqps': 5671 };
 
+var defaultClientProperties = {
+  version: nodeAMQPVersion,
+  platform: 'node-' + process.version,
+  product: 'node-amqp'
+};
+
 var defaultOptions = { host: 'localhost'
                      , port: defaultPorts['amqp']
                      , login: 'guest'
@@ -1027,9 +1034,14 @@ exports.createConnection = function (connectionArgs, options, readyCallback) {
 };
 
 Connection.prototype.setOptions = function (options) {
-  var o  = {};
+  var o  = {
+    clientProperties: {}
+  };
+
   var urlo = (options && options.url) ? urlOptions(options.url) : {};
   mixin(o, defaultOptions, urlo, options || {});
+  mixin(o.clientProperties, defaultClientProperties, (options && options.clientProperties) ? options.clientProperties : {});
+
   this.options = o;
 };
 
@@ -1056,8 +1068,8 @@ Connection.prototype.connect = function () {
   if(Array.isArray(this.options.host) == true){
     if(this.hosti == null){
       if(this.options.hostPreference !== undefined && typeof this.options.hostPreference == 'number') {
-        this.hosti = (this.options.hostPreference<this.options.host.length)?this.options.hostPreference:this.options.host.length-1; 
-      }else{   
+        this.hosti = (this.options.hostPreference<this.options.host.length)?this.options.hostPreference:this.options.host.length-1;
+      }else{
         this.hosti = Math.random()*this.options.host.length >> 0;
       }
     }else{
@@ -1119,11 +1131,7 @@ Connection.prototype._onMethod = function (channel, method, args) {
       this.serverProperties = args.serverProperties;
       // 3. Then we reply with StartOk, containing our useless information.
       this._sendMethod(0, methods.connectionStartOk,
-          { clientProperties:
-            { version: '0.0.1'
-            , platform: 'node-' + process.version
-            , product: 'node-amqp'
-            }
+          { clientProperties: this.options.clientProperties
           , mechanism: 'AMQPLAIN'
           , response:
             { LOGIN: this.options.login
@@ -1249,7 +1257,7 @@ Connection.prototype._sendMethod = function (channel, method, args) {
   //debug("sending frame: " + c);
 
   this.write(c);
-  
+
   this._outboundHeartbeatTimerReset();
 };
 
@@ -1573,7 +1581,7 @@ Channel.prototype._onChannelMethod = function(channel, method, args) {
     }
 };
 
-Channel.prototype.close = function() { 
+Channel.prototype.close = function() {
   this.state = 'closing';
     this.connection._sendMethod(this.channel, methods.channelClose,
                                 {'replyText': 'Goodbye from node',
@@ -1589,14 +1597,14 @@ function Queue (connection, channel, name, options, callback) {
   this.consumerTagListeners = {};
   this.consumerTagOptions = {};
   var self = this;
-  
+
   // route messages to subscribers based on consumerTag
   this.on('rawMessage', function(message) {
     if (message.consumerTag && self.consumerTagListeners[message.consumerTag]) {
       self.consumerTagListeners[message.consumerTag](message);
     }
   });
-  
+
   this.options = { autoDelete: true, closeChannelOnUnsubscribe: false };
   if (options) mixin(this.options, options);
 
@@ -1692,11 +1700,11 @@ Queue.prototype.subscribe = function (/* options, messageListener */) {
   }
   return this.subscribeRaw(rawOptions, function (m) {
     var contentType = m.contentType;
-    
+
     if (contentType == null && m.headers && m.headers.properties) {
        contentType = m.headers.properties.content_type;
     }
-    
+
     var isJSON = (contentType == 'text/json') || (contentType == 'application/json');
 
     var b;
@@ -1787,7 +1795,7 @@ Queue.prototype.bind = function (/* [exchange,] routingKey [, bindCallback] */) 
         delete arguments[arguments.length-1];
         arguments.length--;
     }
-    
+
   if (arguments.length == 2) {
     exchange = arguments[0];
     routingKey = arguments[1];
@@ -1926,7 +1934,7 @@ Queue.prototype._onMethod = function (channel, method, args) {
         }
 
         this.emit('open');
-      } else { 
+      } else {
         this.connection._sendMethod(channel, methods.queueDeclare,
             { reserved1: 0
             , queue: this.name
@@ -1951,7 +1959,7 @@ Queue.prototype._onMethod = function (channel, method, args) {
       }
       // TODO this is legacy interface, remove me
       this.emit('open', args.queue, args.messageCount, args.consumerCount);
-      
+
       // If this is a reconnect, we must re-subscribe our queue listeners.
       var consumerTags = Object.keys(this.consumerTagListeners);
       for (var index in consumerTags) {
@@ -1996,12 +2004,12 @@ Queue.prototype._onMethod = function (channel, method, args) {
       this.emit('error', e);
       this.emit('close');
       break;
-    
+
     case methods.channelCloseOk:
       this.connection.queueClosed(this.name);
       this.emit('close');
       break;
-    
+
     case methods.basicDeliver:
       this.currentMessage = new Message(this, args);
       break;
@@ -2079,8 +2087,8 @@ Exchange.prototype._onMethod = function (channel, method, args) {
         }
         // --
         this.emit('open');
-       
-      // For if we want to delete a exchange, 
+
+      // For if we want to delete a exchange,
       // we dont care if all of the options match.
       } else if (this.options.noDeclare){
 
@@ -2129,7 +2137,7 @@ Exchange.prototype._onMethod = function (channel, method, args) {
 
     case methods.confirmSelectOk:
       this._sequence = 1;
-      
+
       this.state = 'open';
       this.emit('open');
       if (this._openCallback) {
@@ -2157,26 +2165,28 @@ Exchange.prototype._onMethod = function (channel, method, args) {
     case methods.basicAck:
       this.emit('basic-ack', args);
 
-      if(args.deliveryTag == 0 && args.multiple == true){
+      args.deliveryTag.read = 0;
+      var deliveryTag = parseInt(args.deliveryTag, 8);
+
+      if(deliveryTag == 0 && args.multiple == true){
         // we must ack everything
         for(var tag in this._unAcked){
           this._unAcked[tag].emitAck()
           delete this._unAcked[tag]
         }
-      }else if(args.deliveryTag != 0 && args.multiple == true){
+      }else if(deliveryTag != 0 && args.multiple == true){
         // we must ack everything before the delivery tag
         for(var tag in this._unAcked){
-          if(tag <= args.deliveryTag){
+          if(tag <= deliveryTag){
             this._unAcked[tag].emitAck()
             delete this._unAcked[tag]
           }
         }
-      }else if(this._unAcked[args.deliveryTag] && args.multiple == false){
+      }else if(this._unAcked[deliveryTag] && args.multiple == false){
         // simple single ack
-        this._unAcked[args.deliveryTag].emitAck()
-        delete this._unAcked[args.deliveryTag]
+        this._unAcked[deliveryTag].emitAck()
+        delete this._unAcked[deliveryTag]
       }
-      
       break;
 
     case methods.basicReturn:
@@ -2227,7 +2237,7 @@ Exchange.prototype._onMethod = function (channel, method, args) {
 // - userId
 // - appId
 // - clusterId
-// 
+//
 // the callback is optional and is only used when confirm is turned on for the exchange
 
 Exchange.prototype.publish = function (routingKey, data, options, callback) {
@@ -2260,7 +2270,7 @@ Exchange.prototype.publish = function (routingKey, data, options, callback) {
     if(callback != null){
       var errorCallback = function(){task.removeAllListeners();callback(true)};
       var exchange = this;
-      task.once('ack',   function(){exchange.removeListener('error', errorCallback); task.removeAllListeners();callback(false)}); 
+      task.once('ack',   function(){exchange.removeListener('error', errorCallback); task.removeAllListeners();callback(false)});
       this.once('error', errorCallback);
     }
   }
@@ -2268,7 +2278,7 @@ Exchange.prototype.publish = function (routingKey, data, options, callback) {
   return task
 };
 
-// do any necessary cleanups eg. after queue destruction  
+// do any necessary cleanups eg. after queue destruction
 Exchange.prototype.cleanup = function() {
   if (this.binds == 0) // don't keep reference open if unused
       this.connection.exchangeClosed(this.name);
@@ -2294,8 +2304,8 @@ Exchange.prototype.destroy = function (ifUnused) {
 Exchange.prototype.unbind = function (/* exchange, routingKey [, bindCallback] */) {
   var self = this;
 
-  // Both arguments are required. The binding to the destination 
-  // exchange/routingKey will be unbound. 
+  // Both arguments are required. The binding to the destination
+  // exchange/routingKey will be unbound.
 
   var exchange    = arguments[0]
     , routingKey  = arguments[1]
@@ -2330,14 +2340,14 @@ Exchange.prototype.unbind = function (/* exchange, routingKey [, bindCallback] *
 Exchange.prototype.bind = function (/* exchange, routingKey [, bindCallback] */) {
   var self = this;
 
-  // Two arguments are required. The binding to the destination 
-  // exchange/routingKey will be established. 
+  // Two arguments are required. The binding to the destination
+  // exchange/routingKey will be established.
 
   var exchange    = arguments[0]
     , routingKey  = arguments[1]
     , callback    = arguments[2]
   ;
-    
+
   if(callback) this._bindCallback = callback;
 
 
