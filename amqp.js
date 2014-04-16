@@ -1040,7 +1040,14 @@ Connection.prototype.setOptions = function (options) {
 
   var urlo = (options && options.url) ? urlOptions(options.url) : {};
   mixin(o, defaultOptions, urlo, options || {});
-  mixin(o.clientProperties, defaultClientProperties, options.clientProperties || {});
+
+  o.clientProperties = defaultClientProperties;
+
+  var keys = Object.keys(options.clientProperties || {});
+
+  for (var i = 0, l = keys.length; i < l; i++) {
+      o.clientProperties[keys[i]] = options.clientProperties[keys[i]];
+  }
 
   this.options = o;
 };
