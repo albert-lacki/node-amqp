@@ -14,7 +14,7 @@ implements the 0.9.1 version of the AMQP protocol.
   - [connection.publish(routingKey, body, options, callback)](#connectionpublishroutingkey-body-options-callback)
   - [connection.disconnect()](#connectiondisconnect)
 - [Queue](#queue)
-  - [connection.queue(name, options, openCallback)](#connectionqueuename-options-opencallback)
+  - [connection.queue(name[, options][, openCallback])](#connectionqueuename-options-opencallback)
   - [queue.subscribe([options,] listener)](#queuesubscribeoptions-listener)
   - [queue.subscribeRaw([options,] listener)](#queuesubscriberawoptions-listener)
   - [queue.unsubscribe(consumerTag)](#queueunsubscribeconsumertag)
@@ -24,9 +24,9 @@ implements the 0.9.1 version of the AMQP protocol.
   - [queue.bind_headers([exchange,] routing)](#queuebind_headersexchange-routing)
   - [queue.destroy(options)](#queuedestroyoptions)
 - [Exchange](#exchange)
-  - [exchange.on('open', callback)](#exchangeon%27open%27-callback)
+  - [exchange.on('open', callback)](#exchangeonopen-callback)
   - [connection.exchange()](#connectionexchange)
-  - [connection.exchange(name, options={}, openCallback)](#connectionexchangename-options=%7B%7D-opencallback)
+  - [connection.exchange(name, options={}, openCallback)](#connectionexchangename-options-opencallback)
   - [exchange.publish(routingKey, message, options, callback)](#exchangepublishroutingkey-message-options-callback)
   - [exchange.destroy(ifUnused = true)](#exchangedestroyifunused--true)
   - [exchange.bind(srcExchange, routingKey [, callback])](#exchangebindsrcexchange-routingkey--callback)
@@ -51,7 +51,7 @@ var connection = amqp.createConnection({ host: 'dev.rabbitmq.com' });
 // Wait for connection to become established.
 connection.on('ready', function () {
   // Use the default 'amq.topic' exchange
-  connection.queue('my-queue', function(q){
+  connection.queue('my-queue', function (q) {
       // Catch all messages
       q.bind('#');
     
@@ -86,6 +86,7 @@ objects as parameters.  The first options object has these defaults:
     , connectionTimeout: 0,
     , authMechanism: 'AMQPLAIN'
     , vhost: '/'
+    , noDelay: true
     , ssl: { enabled : false
            }
     }
@@ -240,7 +241,7 @@ var q = connection.queue('my-queue', function (queue) {
 Declaring a queue with an empty name will make the server generate a
 random name.
 
-### connection.queue(name, options, openCallback)
+### connection.queue(name[, options][, openCallback])
 
 Returns a reference to a queue. The name parameter is required, unlike pika which defaults the name to `''`. The options are
 
